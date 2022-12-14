@@ -1,0 +1,25 @@
+.article {
+    position: relative;
+    width: clamp(22rem, 40vw, 50rem);
+    padding: 2rem;
+    border-radius: 5px;
+    box-shadow: 1px 1px 10px hsl(0, 0%, 80%);
+    transition: box-shadow 0.5s;
+    &:hover {
+        box-shadow: 1px 1px 20px hsl(0, 0%, 60%);
+    }
+    h5,
+    h2 {
+        margin-bottom: 1rem;
+    }
+    h5 {
+        font-weight: 200;
+    }
+    .read-more-container {
+        margin-top: 1rem;
+        font-size: 0.8rem;
+    }
+    .screen-reader-text {
+        display: none;
+    }
+}

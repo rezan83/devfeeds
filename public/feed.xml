@@ -1,0 +1,1420 @@
+<?xml version="1.0" encoding="UTF-8"?><rss version="2.0"
+	xmlns:content="http://purl.org/rss/1.0/modules/content/"
+	xmlns:wfw="http://wellformedweb.org/CommentAPI/"
+	xmlns:dc="http://purl.org/dc/elements/1.1/"
+	xmlns:atom="http://www.w3.org/2005/Atom"
+	xmlns:sy="http://purl.org/rss/1.0/modules/syndication/"
+	xmlns:slash="http://purl.org/rss/1.0/modules/slash/"
+	>
+
+<channel>
+	<title>dev98</title>
+	<atom:link href="https://dev98.de/feed/" rel="self" type="application/rss+xml" />
+	<link>https://dev98.de</link>
+	<description>a blog of the netz98 developer team</description>
+	<lastBuildDate>Mon, 14 Sep 2020 08:19:22 +0000</lastBuildDate>
+	<language>en-US</language>
+	<sy:updatePeriod>
+	hourly	</sy:updatePeriod>
+	<sy:updateFrequency>
+	1	</sy:updateFrequency>
+	
+
+<image>
+	<url>https://dev98.de/wp-content/uploads/2017/03/cropped-logo_50px.png</url>
+	<title>dev98</title>
+	<link>https://dev98.de</link>
+	<width>32</width>
+	<height>32</height>
+</image> 
+	<item>
+		<title>AJAX loading of related products in Magento 2</title>
+		<link>https://dev98.de/2020/09/14/ajax-loading-of-related-products-in-magento-2/</link>
+					<comments>https://dev98.de/2020/09/14/ajax-loading-of-related-products-in-magento-2/#respond</comments>
+		
+		<dc:creator><![CDATA[Alexander Dite]]></dc:creator>
+		<pubDate>Mon, 14 Sep 2020 08:19:22 +0000</pubDate>
+				<category><![CDATA[Magento 2]]></category>
+		<category><![CDATA[ajax]]></category>
+		<category><![CDATA[catalog]]></category>
+		<category><![CDATA[optimization]]></category>
+		<category><![CDATA[performance]]></category>
+		<category><![CDATA[products]]></category>
+		<category><![CDATA[related]]></category>
+		<guid isPermaLink="false">https://dev98.de/?p=1177</guid>
+
+					<description><![CDATA[Introduction In some projects the amount of related products can be significant. In my case there were more than 300 related products and upsell products on some product detail pages. The consequence of this was a high time to first byte on product detail pages. In the mentioned project it was about 15 seconds for some of the products. So we searched for a possible optimization. We finally decided to implement asynchronous loading of product recommendations via AJAX. At the...<p class="read-more"><a class="btn btn-default" href="https://dev98.de/2020/09/14/ajax-loading-of-related-products-in-magento-2/"> Read More<span class="screen-reader-text">  Read More</span></a></p>]]></description>
+										<content:encoded><![CDATA[
+<h2>Introduction</h2>
+
+
+
+<p>In some projects the amount of related products can be significant. In my case there were more than 300 related products and upsell products on some product detail pages. The consequence of this was a high time to first byte on product detail pages. In the mentioned project it was about 15 seconds for some of the products. So we searched for a possible optimization. We finally decided to implement asynchronous loading of product recommendations via AJAX. At the end we had a significant performance improvement and better user experience.</p>
+
+
+
+<p>In the following I will describe how to implement the solution on the example of related products on product detail pages. With some modifications this can also be used for upsell products on PDP, or even for crosssells in the Checkout Cart.</p>
+
+
+
+<p>In the following we use a sample extension  called <strong>N98_AjaxProductRecommendations</strong>.</p>
+
+
+
+<h2>The principle of the implementation</h2>
+
+
+
+<p>First what needs to be done is remove the rendering of the related product block on product detail page. After that we replace the removed block with a custom placeholder block with own placeholder template. The template contains a placeholder &lt;div&gt; element and an initialization of a custom JS file. On<em> document ready</em> event an AJAX request is triggered to get the content of related products list and to put the content into the mentioned placeholder &lt;div&gt;. For the AJAX request we need a custom controller class and an abstract layout file. In the placeholder template we also build a check whether the product has related products and only if so, initialize the JS. This avoids unneeded requests for pages where there are no related products linked.</p>
+
+
+
+<h2>Initialize module N98_AjaxProductRecommendations</h2>
+
+
+
+<p><strong>etc/module.xml :</strong></p>
+
+
+
+<pre class="EnlighterJSRAW" data-enlighter-language="xml" data-enlighter-theme="" data-enlighter-highlight="" data-enlighter-linenumbers="" data-enlighter-lineoffset="" data-enlighter-title="" data-enlighter-group="">&lt;?xml version="1.0"?>
+&lt;!--
+/**
+ * @copyright Copyright (c) netz98 GmbH (https://www.netz98.de)
+ */
+-->
+&lt;config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="urn:magento:framework:Module/etc/module.xsd">
+    &lt;module name="N98_AjaxProductRecommendations">
+        &lt;sequence>
+            &lt;module name="Magento_Catalog" />
+            &lt;module name="Magento_TargetRule" />
+        &lt;/sequence>
+    &lt;/module>
+&lt;/config>
+</pre>
+
+
+
+<p><strong>composer.json :</strong></p>
+
+
+
+<pre class="EnlighterJSRAW" data-enlighter-language="json" data-enlighter-theme="" data-enlighter-highlight="" data-enlighter-linenumbers="" data-enlighter-lineoffset="" data-enlighter-title="" data-enlighter-group="">{
+    "name": "n98/ext.magento2.n98.ajax-product-recommendations",
+    "description": "Switch to AJAX loading of product recommendations.",
+    "type": "magento2-module",
+    "license": [
+        "proprietary"
+    ],
+    "authors": [
+        {
+            "name": "netz98 GmbH",
+            "email": "magento@netz98.de"
+        }
+    ],
+    "autoload": {
+        "files": [
+            "registration.php"
+        ],
+        "psr-4": {
+            "N98\\AjaxProductRecommendations\\": ""
+        }
+    }
+}
+</pre>
+
+
+
+<p><strong>registration.php :</strong></p>
+
+
+
+<pre class="EnlighterJSRAW" data-enlighter-language="php" data-enlighter-theme="" data-enlighter-highlight="" data-enlighter-linenumbers="" data-enlighter-lineoffset="" data-enlighter-title="" data-enlighter-group="">&lt;?php
+/**
+ * @copyright Copyright (c) netz98 GmbH (https://www.netz98.de)
+ */
+
+\Magento\Framework\Component\ComponentRegistrar::register(
+    \Magento\Framework\Component\ComponentRegistrar::MODULE,
+    'N98_AjaxProductRecommendations',
+    __DIR__
+);
+</pre>
+
+
+
+<h2>Route definition and controller</h2>
+
+
+
+<p><strong>etc/frontend/routes.xml :</strong></p>
+
+
+
+<pre class="EnlighterJSRAW" data-enlighter-language="xml" data-enlighter-theme="" data-enlighter-highlight="" data-enlighter-linenumbers="" data-enlighter-lineoffset="" data-enlighter-title="" data-enlighter-group="">&lt;config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="urn:magento:framework:App/etc/routes.xsd">
+    &lt;router id="standard">
+        &lt;route id="n98_ajaxproductrecommendations" frontName="n98_ajaxproductrecommendations">
+            &lt;module name="N98_AjaxProductRecommendations" />
+        &lt;/route>
+    &lt;/router>
+&lt;/config></pre>
+
+
+
+<p><strong>Controller/Ajax/RenderRelated.php :</strong></p>
+
+
+
+<pre class="EnlighterJSRAW" data-enlighter-language="php" data-enlighter-theme="" data-enlighter-highlight="" data-enlighter-linenumbers="" data-enlighter-lineoffset="" data-enlighter-title="" data-enlighter-group="">&lt;?php
+/**
+ * @copyright Copyright (c) netz98 GmbH (https://www.netz98.de)
+ *
+ * @see PROJECT_LICENSE.txt
+ */
+
+namespace N98\AjaxProductRecommendations\Controller\Ajax;
+
+use Magento\Catalog\Api\ProductRepositoryInterface;
+use Magento\Framework\App\Action\Action;
+use Magento\Framework\App\Action\Context;
+use Magento\Framework\App\ResponseInterface;
+use Magento\Framework\Controller\Result\Json;
+use Magento\Framework\Controller\Result\JsonFactory;
+use Magento\Framework\Registry;
+
+/**
+ * Class RenderRelated
+ *
+ * @package N98\AjaxProductRecommendations\Controller\Ajax
+ */
+class RenderRelated extends Action
+{
+    const BLOCK_NAME_PRODUCT_RELATED_PRODUCTS = 'catalog.product.related';
+    /**
+     * @var JsonFactory
+     */
+    private $jsonFactory;
+    /**
+     * @var ProductRepositoryInterface
+     */
+    private $productRepository;
+    /**
+     * @var Registry
+     */
+    private $coreRegistry;
+
+    /**
+     * Render constructor.
+     * @param Context $context
+     * @param JsonFactory $jsonFactory
+     * @param ProductRepositoryInterface $productRepository
+     * @param Registry $coreRegistry
+     */
+    public function __construct(
+        Context $context,
+        JsonFactory $jsonFactory,
+        ProductRepositoryInterface $productRepository,
+        Registry $coreRegistry
+    ) {
+        parent::__construct($context);
+        $this->jsonFactory = $jsonFactory;
+        $this->productRepository = $productRepository;
+        $this->coreRegistry = $coreRegistry;
+    }
+
+    /**
+     * Execute action based on request and return result
+     *
+     * Note: Request will be added as operation argument in future
+     *
+     * @return \Magento\Framework\Controller\ResultInterface|ResponseInterface
+     * @throws \Magento\Framework\Exception\NotFoundException
+     */
+    public function execute()
+    {
+        if (!$this->getRequest()->isAjax()) {
+            $this->_forward('noroute');
+            return;
+        }
+
+        $result = $this->jsonFactory->create();
+
+        $productId = $this->getRequest()->getParam('product_id');
+
+        if (!$productId) {
+            return $this->setErrorResult(
+                $result,
+                __('Product recommendations could not be loaded.')
+            );
+        }
+
+        try {
+            $product = $this->productRepository->getById($productId);
+            /*
+             * set current product in registry for this
+             * 2 keys in order it to be used in rendered blocks
+             */
+            $this->coreRegistry->register('product', $product);
+            $this->coreRegistry->register('current_product', $product);
+
+            $this->_view->loadLayout(
+                ['default', 'n98_ajaxproductrecommendations_content_abstract'],
+                true,
+                true,
+                false
+            );
+            $layout = $this->_view->getLayout();
+            $block = $layout->getBlock(self::BLOCK_NAME_PRODUCT_RELATED_PRODUCTS);
+            if (!$block) {
+                return $this->setErrorResult(
+                    $result,
+                    __('Product recommendations could not be loaded.')
+                );
+            }
+            $output = $block->toHtml();
+            $result->setData(
+                [
+                    'output' => $output,
+                    'success' => true
+                ]
+            );
+            return $result;
+        } catch (\Exception $e) {
+            return $this->setErrorResult(
+                $result,
+                __('Product recommendations could not be loaded.')
+            );
+        }
+    }
+
+    /**
+     * Set error result
+     *
+     * @param Json $result
+     * @param string $errorMessage
+     * @return Json
+     */
+    private function setErrorResult(Json $result, $errorMessage)
+    {
+        $result->setData(
+            [
+                'output' => $errorMessage,
+                'success' => false
+            ]
+        );
+
+        return $result;
+    }
+}
+</pre>
+
+
+
+<h2>Frontend Block, Layouts, Template, ViewModel and JS file</h2>
+
+
+
+<p><strong>Block/Placeholder/Related.php :</strong></p>
+
+
+
+<pre class="EnlighterJSRAW" data-enlighter-language="php" data-enlighter-theme="" data-enlighter-highlight="" data-enlighter-linenumbers="" data-enlighter-lineoffset="" data-enlighter-title="" data-enlighter-group="">&lt;?php
+/**
+ * @copyright Copyright (c) netz98 GmbH (https://www.netz98.de)
+ *
+ * @see PROJECT_LICENSE.txt
+ */
+
+namespace N98\AjaxProductRecommendations\Block\Placeholder;
+
+use Magento\Catalog\Block\Product\View as CatalogProductView;
+
+/**
+ * Class Related
+ *
+ * @package N98\AjaxProductRecommendations\Block\Placeholder
+ */
+class Related extends CatalogProductView
+{
+    /**
+     * @return string
+     */
+    public function getAjaxUrl()
+    {
+        // return relative url, base urls will be prefixed in js
+        return 'n98_ajaxproductrecommendations/ajax/renderRelated';
+    }
+}
+</pre>
+
+
+
+<p><strong>view/frontend/layout/catalog_product_view.xml :</strong></p>
+
+
+
+<pre class="EnlighterJSRAW" data-enlighter-language="xml" data-enlighter-theme="" data-enlighter-highlight="" data-enlighter-linenumbers="" data-enlighter-lineoffset="" data-enlighter-title="" data-enlighter-group="">&lt;?xml version="1.0"?>
+&lt;!--
+/**
+ * @copyright Copyright (c) netz98 GmbH (https://www.netz98.de)
+ *
+ * @see PROJECT_LICENSE.txt
+ */
+-->
+&lt;page layout="1column" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:noNamespaceSchemaLocation="urn:magento:framework:View/Layout/etc/page_configuration.xsd">
+    &lt;body>
+        &lt;referenceContainer name="content.aside">
+            &lt;block class="N98\AjaxProductRecommendations\Block\Placeholder\Related"
+                   name="catalog.product.related.placeholder" as="related-products-placeholder"
+                   template="N98_AjaxProductRecommendations::placeholder/related.phtml"
+                   before="product.info.upsell">
+                &lt;arguments>
+                    &lt;argument name="view_model" xsi:type="object">N98\AjaxProductRecommendations\ViewModel\RelatedViewModel&lt;/argument>
+                &lt;/arguments>
+            &lt;/block>
+        &lt;/referenceContainer>
+        &lt;! &#8211; Remove related blocks as they are now loaded via AJAX -->
+        &lt;referenceBlock name="related_products_impression" remove="true"/>
+        &lt;referenceBlock name="catalog.product.related" remove="true"/>
+    &lt;/body>
+&lt;/page>
+</pre>
+
+
+
+<p><strong>view/frontend/layout/n98_ajaxproductrecommendations_content_abstract.xml :</strong></p>
+
+
+
+<pre class="EnlighterJSRAW" data-enlighter-language="xml" data-enlighter-theme="" data-enlighter-highlight="" data-enlighter-linenumbers="" data-enlighter-lineoffset="" data-enlighter-title="" data-enlighter-group="">&lt;?xml version="1.0"?>
+&lt;!--
+/**
+ * @copyright Copyright (c) netz98 GmbH (https://www.netz98.de)
+ *
+ * @see PROJECT_LICENSE.txt
+ */
+-->
+&lt;layout xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="urn:magento:framework:View/Layout/etc/layout_generic.xsd">
+    &lt;block class="Magento\TargetRule\Block\Catalog\Product\ProductList\Related" name="catalog.product.related" template="Magento_Catalog::product/list/items.phtml">
+        &lt;arguments>
+            &lt;argument name="type" xsi:type="string">related-rule&lt;/argument>
+            &lt;argument name="view_model" xsi:type="object">Magento\Catalog\ViewModel\Product\Listing\PreparePostData&lt;/argument>
+        &lt;/arguments>
+        &lt;block class="Magento\Catalog\Block\Product\ProductList\Item\Container" name="related.product.addto" as="addto">
+            &lt;block class="Magento\Wishlist\Block\Catalog\Product\ProductList\Item\AddTo\Wishlist"
+                   name="related.product.addto.wishlist" as="wishlist" before="compare"
+                   template="Magento_Wishlist::catalog/product/list/addto/wishlist.phtml"/>
+            &lt;block class="Magento\Catalog\Block\Product\ProductList\Item\AddTo\Compare"
+                   name="related.product.addto.compare" as="compare"
+                   template="Magento_Catalog::product/list/addto/compare.phtml"/>
+        &lt;/block>
+    &lt;/block>
+&lt;/layout>
+</pre>
+
+
+
+<p><strong>view/frontend/templates/placeholder/related.phtml :</strong></p>
+
+
+
+<pre class="EnlighterJSRAW" data-enlighter-language="php" data-enlighter-theme="" data-enlighter-highlight="" data-enlighter-linenumbers="" data-enlighter-lineoffset="" data-enlighter-title="" data-enlighter-group="">&lt;?php
+/**
+ * @copyright Copyright (c) netz98 GmbH (https://www.netz98.de)
+ *
+ * @see       PROJECT_LICENSE.txt
+ */
+/** @var $block \N98\AjaxProductRecommendations\Block\Placeholder\Related */
+/** @var \N98\AjaxProductRecommendations\ViewModel\RelatedViewModel $viewModel */
+$viewModel = $block->getData('view_model');
+$product = $block->getProduct();
+?>
+&lt;?php if ($viewModel->productHasRelatedProducts($product)): ?>
+    &lt;?php
+    $htmlPlaceholderId = 'product-recommendation-detailpage-related-placeholder';
+    ?>
+    &lt;div id="&lt;?php echo $htmlPlaceholderId; ?>">&lt;/div>
+    &lt;?php
+    $ajaxUrl = $block->getAjaxUrl();
+    $loaderImage = $block->escapeUrl($block->getViewFileUrl('images/loader-1.gif'));
+    ?>
+    &lt;script type="text/x-magento-init">
+    {
+        "*": {
+            "N98_AjaxProductRecommendations/js/related-products-loader": {
+                "ajaxUrl": "&lt;?php echo $ajaxUrl; ?>",
+                "productId": "&lt;?php echo $product->getId(); ?>",
+                "htmlPlaceholderId": "&lt;?php echo $htmlPlaceholderId; ?>",
+                "loaderImage": "&lt;?php echo $loaderImage; ?>"
+            }
+        }
+    }
+
+    &lt;/script>
+&lt;?php endif; ?>
+</pre>
+
+
+
+<p><strong>view/frontend/web/js/related-products-loader.js :</strong></p>
+
+
+
+<pre class="EnlighterJSRAW" data-enlighter-language="js" data-enlighter-theme="" data-enlighter-highlight="" data-enlighter-linenumbers="" data-enlighter-lineoffset="" data-enlighter-title="" data-enlighter-group="">define([
+    "jquery",
+    "loader"
+], function ($) {
+    "use strict";
+
+    function renderRelatedProducts(config) {
+        var ajaxUrl = BASE_URL + config.ajaxUrl;
+        var productId = config.productId;
+        var elementId = config.htmlPlaceholderId;
+        var loaderImageUrl = config.loaderImage;
+
+        $(document).ready(function () {
+            $.ajax({
+                context: '#' + elementId,
+                url: ajaxUrl,
+                type: 'POST',
+                data: {product_id: productId},
+                dataType: 'json',
+                beforeSend: function() {
+                    $('#' + elementId).loader({icon: loaderImageUrl});
+                    $('#' + elementId).trigger('processStart');
+                },
+                success: function(data) {
+                    var element = $('#' + elementId);
+                    if (data.success === true) {
+                        element.html(data.output).trigger('contentUpdated');
+                        $('form[data-role="tocart-form"]').catalogAddToCart();
+                    } else {
+                        element.html('&lt;p>&lt;strong>' + data.output + '&lt;/strong>&lt;/p>'); // display error message
+                    }
+                    return data.success;
+                },
+                complete: function() {
+                    $('#' + elementId).trigger('processStop');
+                },
+                error: function() {
+                    $('#' + elementId).trigger('processStop');
+                }
+            });
+        });
+    }
+
+    return renderRelatedProducts;
+});
+</pre>
+
+
+
+<p><strong>ViewModel/RelatedViewModel.php :</strong></p>
+
+
+
+<pre class="EnlighterJSRAW" data-enlighter-language="php" data-enlighter-theme="" data-enlighter-highlight="" data-enlighter-linenumbers="" data-enlighter-lineoffset="" data-enlighter-title="" data-enlighter-group="">&lt;?php
+/**
+ * @copyright Copyright (c) netz98 GmbH (https://www.netz98.de)
+ *
+ * @see       PROJECT_LICENSE.txt
+ */
+
+namespace N98\AjaxProductRecommendations\ViewModel;
+
+use Magento\Catalog\Api\Data\ProductInterface;
+use Magento\Catalog\Model\Product;
+use Magento\Framework\View\Element\Block\ArgumentInterface;
+
+/**
+ * Class RelatedViewModel
+ *
+ * @package N98\AjaxProductRecommendations\ViewModel
+ */
+class RelatedViewModel implements ArgumentInterface
+{
+    /**
+     * Product has related products check
+     *
+     * @param ProductInterface $product
+     *
+     * @return bool
+     */
+    public function productHasRelatedProducts(ProductInterface $product)
+    {
+        /** @var Product $product */
+        $relatedCollection = $product->getRelatedLinkCollection();
+
+        // use getSize() methods in order not to load collection but just trigger count sql
+        if ($relatedCollection->getSize() > 0) {
+            return true;
+        }
+
+        return false;
+    }
+}
+</pre>
+
+
+
+<h2>Summing up</h2>
+
+
+
+<p>The presented code was tested with Magento Commerce 2.3.5 and simple products only.  The examples in this article do not claim to be complete. Feel free to leave a comment if you have a question or suggestion for improvements.</p>
+]]></content:encoded>
+					
+					<wfw:commentRss>https://dev98.de/2020/09/14/ajax-loading-of-related-products-in-magento-2/feed/</wfw:commentRss>
+			<slash:comments>0</slash:comments>
+		
+		
+			</item>
+		<item>
+		<title>Request data through a proxy with GuzzleHttp &#8211; PSR-7 compliant</title>
+		<link>https://dev98.de/2019/06/19/request-data-through-a-proxy-with-guzzlehttp-psr-7-compliant/</link>
+					<comments>https://dev98.de/2019/06/19/request-data-through-a-proxy-with-guzzlehttp-psr-7-compliant/#comments</comments>
+		
+		<dc:creator><![CDATA[Elias Henrich]]></dc:creator>
+		<pubDate>Wed, 19 Jun 2019 09:26:09 +0000</pubDate>
+				<category><![CDATA[General]]></category>
+		<category><![CDATA[GuzzleHttp]]></category>
+		<category><![CDATA[HTTP]]></category>
+		<category><![CDATA[magento2]]></category>
+		<category><![CDATA[proxy]]></category>
+		<category><![CDATA[PSR]]></category>
+		<category><![CDATA[PSR-7]]></category>
+		<guid isPermaLink="false">https://dev98.de/?p=1104</guid>
+
+					<description><![CDATA[When a Magento shop &#8211; or any other PHP application &#8211; is required to request data from or transmit data to a remote server, it is often necessary to redirect the traffic through a Http-proxy server. In my case this was essential because the called endpoint allows only certain IP addresses to access the requested ressource. Since I am working from various locations, each having a different IP address, I had to find a way that certain Http-requests are routed...<p class="read-more"><a class="btn btn-default" href="https://dev98.de/2019/06/19/request-data-through-a-proxy-with-guzzlehttp-psr-7-compliant/"> Read More<span class="screen-reader-text">  Read More</span></a></p>]]></description>
+										<content:encoded><![CDATA[
+<p>When a Magento shop &#8211; or any other PHP application &#8211; is required to request data from or transmit data to a remote server, it is often necessary to redirect the traffic through a Http-proxy server. In my case this was essential because the called endpoint allows only certain IP addresses to access the requested ressource. Since I am working from various locations, each having a different IP address, I had to find a way that certain Http-requests are routed through the company&#8217;s proxy server. This article is going to describe what a proxy actually does for us, why I cannot and should not use PHP&#8217;s environment variables and what the best solution is for scenarios where PSR-7 / <a href="http://docs.php-http.org/en/latest/">PHP-Http</a> in combination with <a href="http://docs.guzzlephp.org/en/stable/" target="_blank" rel="noreferrer noopener" aria-label=" (opens in a new tab)">GuzzleHttp</a> might be.</p>
+
+
+
+<h3>What about <a href="https://www.php-fig.org/psr/psr-15/" target="_blank" rel="noreferrer noopener" aria-label=" (opens in a new tab)">PSR-15</a>?</h3>
+
+
+
+<p>Good point! This text will discuss Http middleware components on client side with the example of adding proxy configurations to a request. The relatively new PSR-15 standard handles the server side and focuses mainly on manipulating the response which is sent back to the calling host. Nevertheless you will get a lot of useful information from the <a rel="noreferrer noopener" aria-label=" (opens in a new tab)" href="https://www.php-fig.org/psr/psr-15/" target="_blank">standard</a> and the <a href="https://github.com/php-fig/fig-standards/blob/master/accepted/PSR-15-request-handlers-meta.md#why-doesnt-request-handler-use-__invoke" target="_blank" rel="noreferrer noopener" aria-label=" (opens in a new tab)">explanation</a>. </p>
+
+
+
+<h3>Why don&#8217;t you simply use the the HTTP_PROXY environment variable?</h3>
+
+
+
+<p>Guzzle indeed accesses the PHP environment variable HTTP_PROXY and routes every request through the specified proxy, if this value is actually configured in php.ini or by using the <code>setenv()</code>-command. <em>But</em> for security reasons this feature is only available when the script is called from the shell (checked using method <a rel="noreferrer noopener" aria-label=" (opens in a new tab)" href="https://php.net/manual/en/function.php-sapi-name.php" target="_blank">php_sapi_name()</a>). More information on the vulnerability and the reason why GuzzleHttp declines to use the settings from environment variables can be found at <a href="https://httpoxy.org/" target="_blank" rel="noreferrer noopener" aria-label=" (opens in a new tab)">httpoxy.org</a>. </p>
+
+
+
+<h3>GuzzleHttp offers a proxy-configuration within the request()-method &#8211; why not use this?</h3>
+
+
+
+<p>Because it it not PSR-7 compliant! The HTTP message interface simply does not provide a method with name <code>request</code> that allows the developer to pass an options-array in which we could add our proxy-configuration. Instead the <a href="https://github.com/php-http/httplug/blob/v1.1.0/src/HttpClient.php" target="_blank" rel="noreferrer noopener" aria-label=" (opens in a new tab)">interface</a> does only declare a method <code>sendRequest</code> that accepts an object of type <code>\Psr\Http\Message\RequestInterface</code> which also does not offer any proxy configuration. </p>
+
+
+
+<h2>Middleware and Handlers</h2>
+
+
+
+<p>Middleware components are a powerful &#8211; and PSR-7 compliant &#8211; way to manipulate Http requests before they&#8217;re sent to a remote server. </p>
+
+
+
+<p>In an example scenario where it would be required to send authentication data in each server call, it&#8217;d sure be exhausting to update the credentials for each method call all over your application&#8217;s code. Adding a middleware layer that automatically adds the necessary data to each request, before it is transmitted, will reduce the code lines to be updated to just a single one (maybe two).</p>
+
+
+
+<p>A middleware is simply a method that resides between the command for sending a request and the actual transmittion. It allows to add, remove or modify data, the target-URL or any other property of the <code>\Psr\Http\Message\RequestInterface</code> as well as additional configuration, that is important for data transfer. </p>
+
+
+
+<p>More information on the PSR-7 standard is given in our <a href="https://dev98.de/2017/01/17/psr-7-standard-part1-overview/">in-depth series</a>.</p>
+
+
+
+<h3>Create a middleware and add it to the HandlerStack</h3>
+
+
+
+<p>The diagram below sketches on the top half the classical way of sending a request: The developer adds a a <code>sendRequest</code> command along with the connection and data settings hold by  <code>$request</code> and passes it to a various transmittion mechanism, e.g. GuzzleHttp.</p>
+
+
+
+<figure class="wp-block-image"><img decoding="async" width="721" height="239" src="https://dev98.de/wp-content/uploads/2019/06/Middleware.png" alt="" class="wp-image-1105" srcset="https://dev98.de/wp-content/uploads/2019/06/Middleware.png 721w, https://dev98.de/wp-content/uploads/2019/06/Middleware-300x99.png 300w, https://dev98.de/wp-content/uploads/2019/06/Middleware-604x200.png 604w" sizes="(max-width: 721px) 100vw, 721px" /></figure>
+
+
+
+<p>In the bottom half of the diagram two sample middleware methods <code>m1</code> and <code>m2</code> are added to stack that resides between sending the request and the actual transmittion. Both methods are free to modify the request or the configuration hold by <code>$options</code> and are executed one after another, as described by the <em>chain of responsibility</em>, part of the infamous <a href="https://en.wikipedia.org/wiki/Design_Patterns" target="_blank" rel="noreferrer noopener" aria-label=" (opens in a new tab)">Gang of Four</a>.</p>
+
+
+
+<p>The following implementation has proven to be stable but might be a bit more complex than what is actually necessary to create a middleware method. The reason for that is because of a better test-ability and more flexibility for future add-ons. </p>
+
+
+
+<h3>Class ProxyMiddleware</h3>
+
+
+
+<p>First step is to create a new class called <code>ProxyMiddleware</code> that is responsible to prepare the concrete middleware method for the handler stack, managed by GuzzleHttp. This class has static method, which holds the proxy settings (URL and port) and will return a closure that will be pushed onto the handler stack later.</p>
+
+
+
+<pre class="wp-block-preformatted">public static function getProxyMiddleware($serverUrl): callable
+{
+ &nbsp; &nbsp;self::$proxyUrl = $serverUrl;
+​
+ &nbsp; &nbsp;return function (callable $handler) {
+ &nbsp; &nbsp; &nbsp; &nbsp;return new ProxyMiddleware($handler);
+ &nbsp;  };
+}</pre>
+
+
+
+<p>As soon as the closure is called during data transmittion a new instance of the <code>ProxyMiddleware</code>-class is created and invoked by the stack dispatcher. Therefore we need to implement the actual middleware-call inside of the magic <code>__invoke</code>-method:</p>
+
+
+
+<pre class="wp-block-preformatted">public function __invoke(RequestInterface $request, array $options)<br>{<br> &nbsp; &nbsp;$fn = $this-&gt;nextHandler;<br>​<br> &nbsp; &nbsp;$options['proxy'] = [<br> &nbsp; &nbsp; &nbsp; &nbsp;'http' &nbsp;=&gt; self::$proxyUrl,<br> &nbsp; &nbsp; &nbsp; &nbsp;'https' =&gt; self::$proxyUrl,<br> &nbsp;  ];<br>​<br> &nbsp; &nbsp;return $fn($request, $options);<br>}</pre>
+
+
+
+<p>It&#8217;s that simple! We just add the proxy information to the <code>$options</code>-array and pass the new information onto the method described by <code>$nextHandler</code>. That was easy!</p>
+
+
+
+<h3>Add our middleware to the handler stack</h3>
+
+
+
+<p>After we have created the middleware handler, we need to tell GuzzleHttp to actually execute it after the <code>sendRequest</code>-command is executed. For this second step we need to instantiate a new <code>HandlerStack</code>-object using the class&#8217; static <code>create</code>-method.</p>
+
+
+
+<pre class="wp-block-preformatted">$handlerStack = \GuzzleHttp\HandlerStack::create();<br>$handlerStack-&gt;push(ProxyMiddleware::getProxyMiddleware('proxy_url'), 'middleware_id');<br>​<br>$options['handler'] = $handlerStack;<br>​<br>$httpClient = \Http\Adapter\Guzzle6\Client::createWithConfig($options);</pre>
+
+
+
+<p>Now we simply push the previously described closure onto the stack together with an identifier-string. Allthough this ID is optional, it will be more than helpful for debugging your application, since Guzzle adds a couple of default middlewares to the stack and you would end up in a unmanageable mess. </p>
+
+
+
+<p>After we have created and configured the handler stack, we simply use the static <code>createWithConfig</code>-method that allows us to inject a options-array into the instantiation of a new Guzzle PSR-7 compliant Http client. </p>
+
+
+
+<p>From now on, all requests that are sent using this Http client will be transmitted with your middleware executed inbetween and having the proxy setting configured!</p>
+
+
+
+<h2>Caveat: Unit Testing</h2>
+
+
+
+<p>Testing your new middleware-class might be a little bit tricky. I just want you to know that closures, like the class member <code>$nextHandler</code> can be mocked using PHP&#8217;s pre-defined core class  <a href="https://www.php.net/manual/de/reserved.classes.php" target="_blank" rel="noreferrer noopener" aria-label=" (opens in a new tab)">\stdClass</a> and the magic <code>__invoke</code> method. In case you&#8217;re using PHPUnit, the following snippet might be helpful:</p>
+
+
+
+<pre class="wp-block-preformatted">$nextHandlerMock = $this-&gt;createPartialMock(\stdClass::class, ['__invoke']);</pre>
+
+
+
+<h2>More information</h2>
+
+
+
+<ul><li><a href="https://dev98.de/2017/01/17/psr-7-standard-part1-overview/">https://dev98.de/2017/01/17/psr-7-standard-part1-overview/</a></li><li><a rel="noreferrer noopener" aria-label=" (opens in a new tab)" href="http://docs.guzzlephp.org/en/stable/handlers-and-middleware.html" target="_blank">http://docs.guzzlephp.org/en/stable/handlers-and-middleware.html</a></li><li><a rel="noreferrer noopener" aria-label=" (opens in a new tab)" href="http://docs.guzzlephp.org/en/stable/request-options.html#proxy" target="_blank">http://docs.guzzlephp.org/en/stable/request-options.html#proxy</a></li><li><a rel="noreferrer noopener" aria-label=" (opens in a new tab)" href="https://medium.com/@brad_brothers/build-a-better-api-client-with-guzzle-middleware-2ace56868dc7" target="_blank">https://medium.com/@brad_brothers/build-a-better-api-client-with-guzzle-middleware-2ace56868dc7</a></li><li><a href="https://github.com/darrenmothersele/php-psr7-proxy" target="_blank" rel="noreferrer noopener" aria-label=" (opens in a new tab)">https://github.com/darrenmothersele/php-psr7-proxy</a></li></ul>
+]]></content:encoded>
+					
+					<wfw:commentRss>https://dev98.de/2019/06/19/request-data-through-a-proxy-with-guzzlehttp-psr-7-compliant/feed/</wfw:commentRss>
+			<slash:comments>1</slash:comments>
+		
+		
+			</item>
+		<item>
+		<title>A visit at our friends of Atwix in Lviv/Ukraine</title>
+		<link>https://dev98.de/2019/04/10/a-visit-at-our-friends-of-atwix-in-lviv-ukraine/</link>
+					<comments>https://dev98.de/2019/04/10/a-visit-at-our-friends-of-atwix-in-lviv-ukraine/#respond</comments>
+		
+		<dc:creator><![CDATA[Christian Münch]]></dc:creator>
+		<pubDate>Wed, 10 Apr 2019 15:38:03 +0000</pubDate>
+				<category><![CDATA[General]]></category>
+		<guid isPermaLink="false">https://dev98.de/?p=1061</guid>
+
+					<description><![CDATA[Last month we received an invitation by our friends of Atwix to attend their Barcamp in Lviv/Ukraine. My colleague Oleksandr and me were happy to join it. Oleksandr was the perfect mate, because he was grown up in Ukraine and so he knows everything about the traditions and local specialities. Our journey started in Frankfurt. After a stopover in Munich we arrived on site with enough energy to explore the beautiful city of Lviv. Oleksandr introduced me to the local...<p class="read-more"><a class="btn btn-default" href="https://dev98.de/2019/04/10/a-visit-at-our-friends-of-atwix-in-lviv-ukraine/"> Read More<span class="screen-reader-text">  Read More</span></a></p>]]></description>
+										<content:encoded><![CDATA[
+<p>Last month we received an invitation by our friends of Atwix to attend their Barcamp in Lviv/Ukraine. My colleague Oleksandr and me were happy to join it. Oleksandr was the perfect mate, because he was grown up in Ukraine and so he knows everything about the traditions and local specialities.</p>
+
+
+
+<p>Our journey started in Frankfurt. After a stopover in Munich we arrived on site with enough energy to explore the beautiful city of Lviv. <br>Oleksandr introduced me to the local delicacies like Borsch (Борщ), Blini (млинці) with Cherry and Varenyky (вареники).</p>
+
+
+
+<figure class="wp-block-image"><img decoding="async" loading="lazy" width="1707" height="1280" src="https://i2.wp.com/dev98.de/wp-content/uploads/2019/04/IMG_20190314_153444.jpg?fit=640%2C480&amp;ssl=1" alt="" class="wp-image-1062" srcset="https://dev98.de/wp-content/uploads/2019/04/IMG_20190314_153444.jpg 1707w, https://dev98.de/wp-content/uploads/2019/04/IMG_20190314_153444-300x225.jpg 300w, https://dev98.de/wp-content/uploads/2019/04/IMG_20190314_153444-1024x768.jpg 1024w, https://dev98.de/wp-content/uploads/2019/04/IMG_20190314_153444-768x576.jpg 768w, https://dev98.de/wp-content/uploads/2019/04/IMG_20190314_153444-1536x1152.jpg 1536w, https://dev98.de/wp-content/uploads/2019/04/IMG_20190314_153444-360x270.jpg 360w" sizes="(max-width: 1707px) 100vw, 1707px" /><figcaption>Traditional Ukraine Food<br></figcaption></figure>
+
+
+
+<p>After an delicious meal we met among others Slava Kravchuk (CEO of Atwix), Yaroslav, Maria Zayak, Tomislav Bilić (CEO of Inchoo) and Max Yekaterynenko (Director of Community Engineering at Adobe). </p>
+
+
+
+<h2>Barcamp</h2>
+
+
+
+<p>The Barcamp started with a breakfast where the attendees already had the chance to get to know each other.</p>
+
+
+
+<p>The agenda of the Barcamp was created in different way compared to previous Barcamps I attended. There were two parallel tracks with already defined talks and discussions. I had the honor to have a talk about Gitlab CI Build Pipelines. </p>
+
+
+
+<figure class="wp-block-image"><img decoding="async" loading="lazy" width="800" height="450" src="https://dev98.de/wp-content/uploads/2019/04/Atwix-Barcamp-Agenda.png" alt="" class="wp-image-1065" srcset="https://dev98.de/wp-content/uploads/2019/04/Atwix-Barcamp-Agenda.png 800w, https://dev98.de/wp-content/uploads/2019/04/Atwix-Barcamp-Agenda-300x169.png 300w, https://dev98.de/wp-content/uploads/2019/04/Atwix-Barcamp-Agenda-768x432.png 768w, https://dev98.de/wp-content/uploads/2019/04/Atwix-Barcamp-Agenda-480x270.png 480w" sizes="(max-width: 800px) 100vw, 800px" /><figcaption>Agenda</figcaption></figure>
+
+
+
+<p>As you can see, there were a lot of interesting talks about all the hot Magento stuff like PWA. Also non Magento related topics like Remote Working were part of the agenda.</p>
+
+
+
+<figure class="wp-block-embed-twitter wp-block-embed is-type-rich is-provider-twitter"><div class="wp-block-embed__wrapper">
+<blockquote class="twitter-tweet" data-width="550" data-dnt="true"><p lang="en" dir="ltr">The legendary <a href="https://twitter.com/cmuench?ref_src=twsrc%5Etfw">@cmuench</a> from <a href="https://twitter.com/netz98?ref_src=twsrc%5Etfw">@netz98</a> is explaining the intelligent pipelines and <a href="https://twitter.com/hashtag/Magento?src=hash&amp;ref_src=twsrc%5Etfw">#Magento</a> deployment process at the <a href="https://twitter.com/atwixcom?ref_src=twsrc%5Etfw">@atwixcom</a> barcamp <a href="https://twitter.com/hashtag/atwixbarcamp?src=hash&amp;ref_src=twsrc%5Etfw">#atwixbarcamp</a> <a href="https://t.co/Ha5lVsX0EF">pic.twitter.com/Ha5lVsX0EF</a></p>&mdash; Slava Kravchuk (@slkra) <a href="https://twitter.com/slkra/status/1106496003459465222?ref_src=twsrc%5Etfw">March 15, 2019</a></blockquote><script async src="https://platform.twitter.com/widgets.js" charset="utf-8"></script>
+</div></figure>
+
+
+
+<p>After a long day with a lot of good content and discussions the day ended with a party at a very cool <a href="https://www.fest.lviv.ua/uk/restaurants/kryjivka/">location</a> where we tasted local food and drinks together with the Atwix and Inchoo guys.</p>
+
+
+
+<h2>Magento Contribution Day</h2>
+
+
+
+<p>Atwix as No. 1 Contributor had organized a Magento Contribution Day. A Contribution Day is a good chance to dive into the source code of the Magento Core.</p>
+
+
+
+<p>The procedure is very easy. Pick some topics from Magento Contribution backlog and try to fix, solve or invent stuff. If you do not know what you can do, visit the portal to start your way to contribute.</p>
+
+
+
+<p><a href="https://opensource.magento.com/">https://opensource.magento.com/</a></p>
+
+
+
+<p>It is also possible to contribute to non code related topics like the developer documentation. I personally picked up an old bug ticket which was not edited since 2016.</p>
+
+
+
+<h2>Conclusion</h2>
+
+
+
+<p>We had a lot of good discussions with <a href="https://www.atwix.com/">Atwix</a> and <a href="https://inchoo.net/">Inchoo</a> developers and project managers about PWA, Magento, Certification and a lot of more topics. I was able to share some insights about Gitlab-CI pipelines which shows the netz98 way of building projects.<br>The evening event was great. The Contribution Day, too&#8230;</p>
+
+
+
+<p>Thank you for the hospitality. See you next time in Lviv.</p>
+
+
+
+<figure class="wp-block-embed-twitter wp-block-embed is-type-rich is-provider-twitter"><div class="wp-block-embed__wrapper">
+<blockquote class="twitter-tweet" data-width="550" data-dnt="true"><p lang="en" dir="ltr">Thanks so much for the great <a href="https://twitter.com/hashtag/atwixbarcamp?src=hash&amp;ref_src=twsrc%5Etfw">#atwixbarcamp</a> everyone! <a href="https://t.co/pWhZSqrNoY">pic.twitter.com/pWhZSqrNoY</a></p>&mdash; Atwix (@atwixcom) <a href="https://twitter.com/atwixcom/status/1106600934950555648?ref_src=twsrc%5Etfw">March 15, 2019</a></blockquote><script async src="https://platform.twitter.com/widgets.js" charset="utf-8"></script>
+</div></figure>
+]]></content:encoded>
+					
+					<wfw:commentRss>https://dev98.de/2019/04/10/a-visit-at-our-friends-of-atwix-in-lviv-ukraine/feed/</wfw:commentRss>
+			<slash:comments>0</slash:comments>
+		
+		
+			</item>
+		<item>
+		<title>How a wrong carrier implementation causes a server outage</title>
+		<link>https://dev98.de/2018/07/23/how-a-wrong-carrier-implementation-causes-a-server-outage/</link>
+					<comments>https://dev98.de/2018/07/23/how-a-wrong-carrier-implementation-causes-a-server-outage/#comments</comments>
+		
+		<dc:creator><![CDATA[Alexander Dite]]></dc:creator>
+		<pubDate>Mon, 23 Jul 2018 08:00:26 +0000</pubDate>
+				<category><![CDATA[Magento 2]]></category>
+		<category><![CDATA[performance]]></category>
+		<guid isPermaLink="false">https://dev98.de/?p=998</guid>
+
+					<description><![CDATA[Sometimes one wrong line of code can break your site. In the following I will describe a mistake in a Magento 2 custom carrier implementation, which causes a massive overloading of server resources (CPU, RAM, DB processes) and even can cause an outage of your Magento store. The one line of code The following line of code is the reason for the problems, if used in the collectRates() method, or in methods, called from collectRates() in the Carrier class: $quote...<p class="read-more"><a class="btn btn-default" href="https://dev98.de/2018/07/23/how-a-wrong-carrier-implementation-causes-a-server-outage/"> Read More<span class="screen-reader-text">  Read More</span></a></p>]]></description>
+										<content:encoded><![CDATA[<p>Sometimes one wrong line of code can break your site. In the following I will describe a mistake in a Magento 2 custom carrier implementation, which causes a massive overloading of server resources (CPU, RAM, DB processes) and even can cause an outage of your Magento store.</p>
+<h3>The one line of code</h3>
+<p>The following line of code is the reason for the problems, if used in the collectRates() method, or in methods, called from collectRates() in the Carrier class:</p>
+<pre class="lang:php decode:true">$quote = $this-&gt;checkoutSession-&gt;getQuote();
+</pre>
+<p>So, in other words, you must not obtain the quote object globally via the checkout session.</p>
+<h3>The reason</h3>
+<p>The method <em>\Magento\Checkout\Model\Session::getQuote(), </em>called for the first time, triggers loading the quote. If we then look at the method <em>\Magento\Quote\Model\Quote::_afterLoad()</em> :</p>
+<pre class="lang:php decode:true ">    /**
+     * Trigger collect totals after loading, if required
+     *
+     * @return $this
+     */
+    protected function _afterLoad()
+    {
+        // collect totals and save me, if required
+        if (1 == $this-&gt;getTriggerRecollect()) {
+            $this-&gt;collectTotals()-&gt;save();
+            $this-&gt;setTriggerRecollect(0);
+        }
+        return parent::_afterLoad();
+    }</pre>
+<p>We then can see, that for quotes, having the field (also a DB column) <em>trigger_recollect</em> set to 1, <em>collectTotals()</em> method is called.</p>
+<p>An attentive reader will already notice, what is going wrong here. It&#8217;s an infinite loop! <em>Quote::collectTotals()</em> will trigger shipping carriers&#8217; method <em>collectRates() </em>and thats where the loop is closed.</p>
+<p>The <em>trigger_recollect</em> flag is set in Magento:</p>
+<ul>
+<li>for quotes depending on catalog price rules</li>
+<li>for quotes containing products which were updated (e.g. in Admin or via API)</li>
+</ul>
+<p>In my case there were a lot of such kind of quotes because of frequent product updates.</p>
+<p>The result was overloaded CPUs, RAM, full MySQL process list and several outages as the infinite loops were being executed for the value of seconds equals PHP max_execution_time.</p>
+<h3>How to avoid this</h3>
+<p>The shipping carrier&#8217;s method collectRates() gets the object of the class <em>\Magento\Quote\Model\Quote\Address\RateRequest </em>passed, where the already loaded quote object should be obtained from (if needed). Unfortunately there is no method &#8220;getQuote()&#8221; in the RateRequest class. The following snippet shows an example of obtaining the quote correctly:</p>
+<pre class="lang:php decode:true">        /**
+         * Do not use checkoutSession-&gt;getQuote()!!! it will cause infinite loop for
+         * quotes with trigger_recollect = 1, see Quote::_afterLoad()
+         */
+        $items = $request-&gt;getAllItems();
+        if (empty($items)) {
+            return false;
+        }
+
+        /** @var \Magento\Quote\Model\Quote\Item $firstItem */
+        $firstItem = reset($items);
+        if (!$firstItem) {
+            return false;
+        }
+
+        $quote = $firstItem-&gt;getQuote();
+        if (!($quote instanceof \Magento\Quote\Model\Quote)) {
+            return false;
+        }</pre>
+<p>I hope this post can save some nerves for you and your team. Feel free to leave a comment.</p>
+]]></content:encoded>
+					
+					<wfw:commentRss>https://dev98.de/2018/07/23/how-a-wrong-carrier-implementation-causes-a-server-outage/feed/</wfw:commentRss>
+			<slash:comments>1</slash:comments>
+		
+		
+			</item>
+		<item>
+		<title>How to avoid security issues in Composer dependencies</title>
+		<link>https://dev98.de/2018/01/24/how-to-avoid-security-issues-in-composer-dependencies/</link>
+					<comments>https://dev98.de/2018/01/24/how-to-avoid-security-issues-in-composer-dependencies/#respond</comments>
+		
+		<dc:creator><![CDATA[Christoph Frenes]]></dc:creator>
+		<pubDate>Wed, 24 Jan 2018 09:09:46 +0000</pubDate>
+				<category><![CDATA[General]]></category>
+		<category><![CDATA[composer]]></category>
+		<category><![CDATA[security]]></category>
+		<category><![CDATA[versioning]]></category>
+		<guid isPermaLink="false">https://dev98.de/?p=951</guid>
+
+					<description><![CDATA[Composer is a great tool for requiring third party modules and software packages for your project. It’s an essential part of the current Magento 2 project structure. Because of the possibility to add more and more modules it is also getting more and more difficult to keep track of relevant security updates. That is especially the case when required modules have further requirements. Here are 3 tips how to improve your project’s security 1. Subscription of third party repositories (when...<p class="read-more"><a class="btn btn-default" href="https://dev98.de/2018/01/24/how-to-avoid-security-issues-in-composer-dependencies/"> Read More<span class="screen-reader-text">  Read More</span></a></p>]]></description>
+										<content:encoded><![CDATA[<p><a href="https://getcomposer.org/">Composer</a> is a great tool for requiring third party modules and software packages for your project. It’s an essential part of the current Magento 2 project structure.</p>
+<p>Because of the possibility to add more and more modules it is also getting more and more difficult to keep track of relevant security updates. That is especially the case when required modules have further requirements.</p>
+<h3>Here are 3 tips how to improve your project’s security</h3>
+<h2>1. Subscription of third party repositories (when using sticky version numbers)</h2>
+<p>If the applied module is published on Github you can subscribe to the repository. Github then informs you via email about changes of the code. If the email contains relevant information regarding security issues, the version of the required module can be increased in your project‘s composer.json file. For updating you just have to type:</p>
+<pre class="">composer update vendor/module</pre>
+<h2><img decoding="async" loading="lazy" class="alignnone size-full wp-image-954" src="https://dev98.de/wp-content/uploads/2018/01/subscribe.jpg" alt="Subscribing @ Github" width="993" height="225" srcset="https://dev98.de/wp-content/uploads/2018/01/subscribe.jpg 993w, https://dev98.de/wp-content/uploads/2018/01/subscribe-300x68.jpg 300w, https://dev98.de/wp-content/uploads/2018/01/subscribe-768x174.jpg 768w, https://dev98.de/wp-content/uploads/2018/01/subscribe-604x137.jpg 604w" sizes="(max-width: 993px) 100vw, 993px" /></h2>
+<h2>2. Avoid static version numbers</h2>
+<p>Compared to option 1 it would be much more safe to manage the applied parts and the own project via <a href="https://semver.org/">semantic versioning</a>. In those cases you can define the dependencies as follows:</p>
+<pre class="">composer require vendor/module=~3.1</pre>
+<p>In this specific case you would get all versions between 3.1.0 and 3.2.0 by executing a &#8220;composer update&#8221;. If the vendor fixes the module, he just increases the version number at the third position and the new code will be applied and implemented with the next update.</p>
+<p>If the vendor implements a new feature however, he increases the major or minor version, e.g. 3.2.x or 4.0.x. The code will only be applied by a manual action of a developer. Reviewing the code before committing the new version would be highly recommended.</p>
+<h2>3. Use SensioLabs Scanner</h2>
+<p>While option 2 is already a very cool and flexible solution, the developers of the vendors of the applied modules still need to be informed about the security issues and they need to fix them. But the moment they release a new version might be too late. As a developer, you definitely want to know about issues immediately, to disable or replace the dangerous module.</p>
+<p>SensioLabs – creator of the Symfony framework – created a <a href="https://security.sensiolabs.org/">database</a> containing known security issues of several packages (Magento, Shopware, Zend Framework etc.) and they allow you to get these information via an <a href="https://security.sensiolabs.org/api">api</a> or a <a href="https://github.com/sensiolabs/security-checker">cli client</a>. These tools scan a given composer.lock file. For every current commit or tag they check for an entry inside the database. After processing the file you get a list of findings if there were any.</p>
+<p><img decoding="async" loading="lazy" class="alignnone size-full wp-image-961" src="https://dev98.de/wp-content/uploads/2018/01/sec_success.jpg" alt="Security Check: Success" width="590" height="223" srcset="https://dev98.de/wp-content/uploads/2018/01/sec_success.jpg 590w, https://dev98.de/wp-content/uploads/2018/01/sec_success-300x113.jpg 300w" sizes="(max-width: 590px) 100vw, 590px" /></p>
+<p><img decoding="async" loading="lazy" class="alignnone size-full wp-image-960" src="https://dev98.de/wp-content/uploads/2018/01/sec_error.jpg" alt="Security Check: Error" width="947" height="481" srcset="https://dev98.de/wp-content/uploads/2018/01/sec_error.jpg 947w, https://dev98.de/wp-content/uploads/2018/01/sec_error-300x152.jpg 300w, https://dev98.de/wp-content/uploads/2018/01/sec_error-768x390.jpg 768w, https://dev98.de/wp-content/uploads/2018/01/sec_error-532x270.jpg 532w" sizes="(max-width: 947px) 100vw, 947px" /></p>
+<p>The client can be easily installed via Composer.</p>
+<pre class="">composer require sensiolabs/security-checker</pre>
+<p>Depending on your project and your required Symfony dependencies you might need to use a specific version of the tool.</p>
+<p>To run it, all you have to type is:</p>
+<pre class="">vendor/bin/security-checker security:check</pre>
+<p>By today there’s only one entry for Magento 2 in this database:</p>
+<ul>
+<li><a style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen-Sans, Ubuntu, Cantarell, 'Helvetica Neue', sans-serif;" href="https://security.sensiolabs.org/database?package=magento/magento2ce">https://security.sensiolabs.org/database?package=magento/magento2ce</a></li>
+</ul>
+<p>&nbsp;</p>
+<h3>Links</h3>
+<ul>
+<li>SensioLabs security issue database: <a href="https://security.sensiolabs.org/">https://security.sensiolabs.org/</a></li>
+<li>SensioLabs security scanner: <a href="https://github.com/sensiolabs/security-checker">https://github.com/sensiolabs/security-checker</a></li>
+<li>Semantic versioning: <a href="https://semver.org/">https://semver.org/</a></li>
+</ul>
+]]></content:encoded>
+					
+					<wfw:commentRss>https://dev98.de/2018/01/24/how-to-avoid-security-issues-in-composer-dependencies/feed/</wfw:commentRss>
+			<slash:comments>0</slash:comments>
+		
+		
+			</item>
+		<item>
+		<title>PSR-7 Standard  &#8211; Part 6 &#8211; Server Requests</title>
+		<link>https://dev98.de/2018/01/02/psr-7-standard-part-6-server-requests/</link>
+					<comments>https://dev98.de/2018/01/02/psr-7-standard-part-6-server-requests/#respond</comments>
+		
+		<dc:creator><![CDATA[Christian Münch]]></dc:creator>
+		<pubDate>Tue, 02 Jan 2018 00:47:23 +0000</pubDate>
+				<category><![CDATA[General]]></category>
+		<category><![CDATA[Cookie]]></category>
+		<category><![CDATA[Get]]></category>
+		<category><![CDATA[Post]]></category>
+		<category><![CDATA[PSR]]></category>
+		<category><![CDATA[Server]]></category>
+		<category><![CDATA[ServerRequest]]></category>
+		<guid isPermaLink="false">https://dev98.de/?p=924</guid>
+
+					<description><![CDATA[This post is part of series: Part 1: Overview Part 2: Request and URI Part 3: Response Part 4: File Uploads Part 5: HTTP-Client Part 6: Server Request Part 7: Middleware Part 8: Usage in a Magento module In Part 3 we already discovered the RequestInterface which is used on client side. In this part, we have a more detailed look on the server side. The Server Request inherits all methods of the RequestInterface and has 13 additional methods. Six methods are available to...<p class="read-more"><a class="btn btn-default" href="https://dev98.de/2018/01/02/psr-7-standard-part-6-server-requests/"> Read More<span class="screen-reader-text">  Read More</span></a></p>]]></description>
+										<content:encoded><![CDATA[<p>This post is part of series:</p>
+<ul>
+<li><a href="/2017/01/17/psr-7-standard-part1-overview/">Part 1: Overview</a></li>
+<li><a href="https://dev98.de/2017/07/03/psr-7-standard-part-2-request-and-uri/">Part 2: Request and URI</a></li>
+<li><a href="https://dev98.de/2017/10/19/psr-7-standard-part-3-response/">Part 3: Response</a></li>
+<li><a href="/2017/11/25/psr-7-standard-part-4-file-uploads/">Part 4: File Uploads</a></li>
+<li><a href="/2017/12/27/psr-7-standard-part-5-http-client/">Part 5: HTTP-Client</a></li>
+<li><strong>Part 6: Server Request</strong></li>
+<li>Part 7: Middleware</li>
+<li>Part 8: Usage in a Magento module</li>
+</ul>
+<hr />
+<p>In Part 3 we already discovered the <code>RequestInterface</code> which is used on client side. In this part, we have a more detailed look on the server side.</p>
+<p><img decoding="async" loading="lazy" class="alignnone size-full wp-image-921" src="https://dev98.de/wp-content/uploads/2018/01/psr7_server_request.png" width="3375" height="1785" srcset="https://dev98.de/wp-content/uploads/2018/01/psr7_server_request.png 3375w, https://dev98.de/wp-content/uploads/2018/01/psr7_server_request-300x159.png 300w, https://dev98.de/wp-content/uploads/2018/01/psr7_server_request-1024x542.png 1024w, https://dev98.de/wp-content/uploads/2018/01/psr7_server_request-768x406.png 768w, https://dev98.de/wp-content/uploads/2018/01/psr7_server_request-1536x812.png 1536w, https://dev98.de/wp-content/uploads/2018/01/psr7_server_request-2048x1083.png 2048w, https://dev98.de/wp-content/uploads/2018/01/psr7_server_request-511x270.png 511w" sizes="(max-width: 3375px) 100vw, 3375px" /></p>
+<p>The Server Request inherits all methods of the <code>RequestInterface</code> and has 13 additional methods. Six methods are available to setup the request object:</p>
+<ul>
+<li>withCookieParams</li>
+<li>withQueryParams</li>
+<li>withUploadedFiles</li>
+<li>withParsedBody</li>
+<li>withAttribute</li>
+<li>withoutAttribute</li>
+</ul>
+<p>Like on client side we have to be careful. The Server Request is designed to be immutable (see Part 3). If we look in the code of the <strong>Guzzle\Psr7 </strong> implementation of the Server Request, we can see that all this methods are needed to create complete request from all global variables</p>
+<p>($_SERVER, $_COOKIE, $_GET, $_POST, $_FILES) which we will get from PHP.</p>
+<pre class="lang:php decode:true"><code>
+/**
+  * Return a ServerRequest populated with superglobals:
+  * $_GET
+  * $_POST
+  * $_COOKIE
+  * $_FILES
+  * $_SERVER
+  *
+  * @return ServerRequestInterface
+  */
+public static function fromGlobals()
+{
+    //.... skipped code
+
+    $serverRequest = new ServerRequest($method, $uri, $headers, $body, $protocol, $_SERVER);
+
+    return $serverRequest
+        -&gt;withCookieParams($_COOKIE)
+        -&gt;withQueryParams($_GET)
+        -&gt;withParsedBody($_POST)
+        -&gt;withUploadedFiles(self::normalizeFiles($_FILES));
+}
+</code></pre>
+<p>(<a title="ServerRequestInterface of Tag 1.4.2" href="https://github.com/guzzle/psr7/blob/1.4.2/src/ServerRequest.php#L166">ServerRequestInterface on Github</a>)</p>
+<p>The other methods are to consume the same data:</p>
+<ul>
+<li>getServerParams</li>
+<li>getCookieParams</li>
+<li>getQueryParams</li>
+<li>getParsedBody</li>
+<li>getAttributes</li>
+<li>getAttribute</li>
+</ul>
+<p>So we have “setter” and matching “getter” methods.</p>
+<p><img decoding="async" loading="lazy" class="alignnone size-full wp-image-922" src="https://dev98.de/wp-content/uploads/2018/01/PSR-7-ServerRequestInterface.png" width="572" height="422" srcset="https://dev98.de/wp-content/uploads/2018/01/PSR-7-ServerRequestInterface.png 572w, https://dev98.de/wp-content/uploads/2018/01/PSR-7-ServerRequestInterface-300x221.png 300w, https://dev98.de/wp-content/uploads/2018/01/PSR-7-ServerRequestInterface-366x270.png 366w" sizes="(max-width: 572px) 100vw, 572px" /></p>
+<p>What’s up with the “getAttributes” and &#8220;getAttribute&#8221; methods? This methods are important for the next part of our blog series. The Middleware.</p>
+]]></content:encoded>
+					
+					<wfw:commentRss>https://dev98.de/2018/01/02/psr-7-standard-part-6-server-requests/feed/</wfw:commentRss>
+			<slash:comments>0</slash:comments>
+		
+		
+			</item>
+		<item>
+		<title>PSR-7 Standard  &#8211; Part 5  &#8211; HTTP Client</title>
+		<link>https://dev98.de/2017/12/27/psr-7-standard-part-5-http-client/</link>
+					<comments>https://dev98.de/2017/12/27/psr-7-standard-part-5-http-client/#respond</comments>
+		
+		<dc:creator><![CDATA[Christian Münch]]></dc:creator>
+		<pubDate>Wed, 27 Dec 2017 09:00:30 +0000</pubDate>
+				<category><![CDATA[General]]></category>
+		<category><![CDATA[client]]></category>
+		<category><![CDATA[HTTP]]></category>
+		<category><![CDATA[PSR]]></category>
+		<guid isPermaLink="false">https://dev98.de/?p=901</guid>
+
+					<description><![CDATA[This post is part of series: Part 1: Overview Part 2: Request and URI Part 3: Response Part 4: File Uploads Part 5: HTTP-Client Part 6: Server Request Part 7: Middleware Part 8: Usage in a Magento module The fifth part of the PSR-7 series describes the HTTP Client. The HTTP client is tool which sends a request to a server and returns the response. Sadly PSR-7 does not contain an interface for the HTTP client. The Standard contains only the HTTP messages. The...<p class="read-more"><a class="btn btn-default" href="https://dev98.de/2017/12/27/psr-7-standard-part-5-http-client/"> Read More<span class="screen-reader-text">  Read More</span></a></p>]]></description>
+										<content:encoded><![CDATA[<p>This post is part of series:</p>
+<ul>
+<li><a href="/2017/01/17/psr-7-standard-part1-overview/">Part 1: Overview</a></li>
+<li><a href="/2017/07/03/psr-7-standard-part-2-request-and-uri/">Part 2: Request and URI</a></li>
+<li><a href="/2017/10/19/psr-7-standard-part-3-response/">Part 3: Response</a></li>
+<li><a href="/2017/11/25/psr-7-standard-part-4-file-uploads">Part 4: File Uploads</a></li>
+<li><strong>Part 5: HTTP-Client</strong></li>
+<li><a href="/2018/01/02/psr-7-standard-part-6-server-requests/">Part 6: Server Request</a></li>
+<li>Part 7: Middleware</li>
+<li>Part 8: Usage in a Magento module</li>
+</ul>
+<hr />
+<p>The fifth part of the PSR-7 series describes the <strong>HTTP Client</strong>.</p>
+<p>The HTTP client is tool which sends a request to a server and returns the response.</p>
+<p>Sadly PSR-7 does not contain an interface for the HTTP client. The Standard contains only the HTTP messages. The client itself is part of the proposed <a title="PSR-18" href="https://github.com/php-fig/fig-standards/blob/master/proposed/http-client/http-client.md">PSR-18</a>.</p>
+<p>PSR-18 is very small. It contains only an Interface with one method and some exception classes. The important part is the <code>sendRequest</code> method. It is easy as pie. A request has to be passed and the client should return a response or throw an <span class="lang:php decode:true crayon-inline">ClientException</span> exception.</p>
+<pre class="lang:php decode:true"><code>interface ClientInterface
+{
+    /**
+     * Sends a PSR-7 request and returns a PSR-7 response. 
+     * 
+     * @param RequestInterface $request
+     *
+     * @return ResponseInterface
+     *
+     * @throws \Psr\Http\Client\ClientException If an error happens during processing the request.
+     */
+    public function sendRequest(RequestInterface $request): ResponseInterface;
+}
+</code></pre>
+<p>At the moment we cannot use PSR-18 in a production environment until it is accepted by the FIG. Fortunately there is an other project which tries to close the gap until the PSR-18 is accepted. The project is the father of the PSR-18. We talk about the HTTPPlug Project (former PHP-HTTP).</p>
+<h2>HTTPPlug Project</h2>
+<p>The project’s homepage is <a href="http://httplug.io/">http://httplug.io/</a>. The main idea is to decouple a PHP package/library from implementation by providing a HTTP client abstraction and some standard implementations.</p>
+<p>It provides a Composer meta package. You don’t know what a Composer meta package is? Think of it as a kind of interface for packages.</p>
+<p>This meta package can be added as requirements in your composer.json. Any compatible package can “<a href="https://getcomposer.org/doc/04-schema.md#provide">provide</a>” an implementation for the meta package.</p>
+<p>If you need a HTTP Client Implementation in your project, you should relay on the meta package instead of an real implementation.</p>
+<p>The implementation can be fulfilled in a project where the PHP library should be used. It is possible to pick any implementation from <a title="Composer Package List - Client Implementations" href="https://packagist.org/providers/php-http/client-implementation">a huge list</a> of existing implementations.</p>
+<p><img decoding="async" loading="lazy" class="alignnone size-full wp-image-900" src="https://dev98.de/wp-content/uploads/2017/12/DraggedImage.png" width="1161" height="818" srcset="https://dev98.de/wp-content/uploads/2017/12/DraggedImage.png 1161w, https://dev98.de/wp-content/uploads/2017/12/DraggedImage-300x211.png 300w, https://dev98.de/wp-content/uploads/2017/12/DraggedImage-1024x721.png 1024w, https://dev98.de/wp-content/uploads/2017/12/DraggedImage-768x541.png 768w, https://dev98.de/wp-content/uploads/2017/12/DraggedImage-383x270.png 383w" sizes="(max-width: 1161px) 100vw, 1161px" /></p>
+<h2>An Example Library</h2>
+<p>First we need a <strong>composer.json</strong> which requires a client implementation. For testing purposes we can add a development requirement to add some example scripts to the library. The HTTP-Plug project comes with a small and handy <a href="http://php.net/manual/de/book.curl.php">CURL</a> based implementation which provides an implementation for the meta package. For the message implementation i.e. the Request, we make use of Guzzle&#8217;s PSR-7 implementation (see previous posts).</p>
+<p><img decoding="async" loading="lazy" class="alignnone size-full wp-image-899" src="https://dev98.de/wp-content/uploads/2017/12/DraggedImage-1.png" width="969" height="824" srcset="https://dev98.de/wp-content/uploads/2017/12/DraggedImage-1.png 969w, https://dev98.de/wp-content/uploads/2017/12/DraggedImage-1-300x255.png 300w, https://dev98.de/wp-content/uploads/2017/12/DraggedImage-1-768x653.png 768w, https://dev98.de/wp-content/uploads/2017/12/DraggedImage-1-318x270.png 318w" sizes="(max-width: 969px) 100vw, 969px" /></p>
+<pre><code class="lang:json">{
+  "name": "acme/my-super-php-library",
+  "require": {
+    "php-http/client-implementation": "^1.0",
+    "guzzlehttp/psr7": "^1.4"
+  },
+  "autoload": {
+    "psr-4": {
+      "Acme\\MyLibrary\\": "src"
+    }
+  },
+  "require-dev": {
+    "php-http/curl-client": "^1.7"
+  }
+}
+</code></pre>
+<p>After a <span class="lang:sh decode:true crayon-inline ">composer install</span>  we are ready to create a sample service which uses the HTTP client. Let’s try to fetch the XML feed from dev98.de.</p>
+<p>We create a service class to fetch the XML feed. The service has a dependency to the HTTP Client interface. The file should be placed in the “src” sub-directory according to our PSR4 autoloading setting in composer.json file.</p>
+<pre class="lang:php decode:true ">&lt;?php
+
+namespace Acme\MyLibrary;
+
+use GuzzleHttp\Psr7\Request;
+
+class FetchXmlFeedService
+{
+    /**
+     * @var \Http\Client\HttpClient
+     */
+    private $client;
+
+    /**
+     * ExampleService constructor.
+     * @param \Http\Client\HttpClient $client
+     */
+    public function __construct(\Http\Client\HttpClient $client)
+    {
+        $this-&gt;client = $client;
+    }
+
+    /**
+     * @return \SimpleXMLElement
+     * @throws \Exception
+     */
+    public function fetch(): \SimpleXMLElement
+    {
+        $request = (new Request('GET', 'https://dev98.de/feed/'))
+            -&gt;withHeader('Accept', 'application/xml');
+
+        $response = $this-&gt;client-&gt;sendRequest($request);
+
+        if ($response-&gt;getStatusCode() !== 200) {
+            throw new \Exception('Could not fetch XML feed');
+        }
+
+        return simplexml_load_string($response-&gt;getBody()-&gt;getContents());
+    }
+}</pre>
+<p>The service does not rely on a real implementation. The <span class="lang:php decode:true crayon-inline ">\Http\Client\HttpClient</span>  is only an interface.</p>
+<p>Now we create a sample script which calls our service in the sub-directory “examples&#8221;.</p>
+<pre class="lang:php decode:true"><code>&lt;?php
+
+require_once __DIR__ . '/../vendor/autoload.php';
+
+$httpClient = new \Http\Client\Curl\Client();
+$service = new \Acme\MyLibrary\FetchXmlFeedService($httpClient);
+$xmlData = $service-&gt;fetch();
+
+foreach ($xmlData-&gt;channel-&gt;item as $item) {
+    echo (string) $item-&gt;title . "\n";
+}
+</code></pre>
+<p>That’s our simple library with an example script. Testing this library is also not a big deal. We can easily mock the Interface.</p>
+<h2>Use the Library</h2>
+<p>If we want to use the library in a real project, we need to add the library in our project’s composer.json file. Then we add an implementation for the http client. This must not be the same as the development requirements in our library. This is a big advantage. If our PHP framework comes with an implementation which fits, we can re-use it.</p>
+<p>The complete source of the blog post is available on Github: <a href="https://github.com/cmuench/psr7-example-library">https://github.com/cmuench/psr7-example-library</a></p>
+<p>The next blog post in this series describes the Server-Request.</p>
+]]></content:encoded>
+					
+					<wfw:commentRss>https://dev98.de/2017/12/27/psr-7-standard-part-5-http-client/feed/</wfw:commentRss>
+			<slash:comments>0</slash:comments>
+		
+		
+			</item>
+		<item>
+		<title>Chrome 63 vs. dev domains</title>
+		<link>https://dev98.de/2017/12/08/chrome-63-vs-dev-domains/</link>
+					<comments>https://dev98.de/2017/12/08/chrome-63-vs-dev-domains/#respond</comments>
+		
+		<dc:creator><![CDATA[Matthias Walter]]></dc:creator>
+		<pubDate>Fri, 08 Dec 2017 09:15:24 +0000</pubDate>
+				<category><![CDATA[General]]></category>
+		<guid isPermaLink="false">https://dev98.de/?p=885</guid>
+
+					<description><![CDATA[With the recent update to version 63 for Chrome they introduced a feature, that redirects all *.dev  calls from HTTP to HTTPS. If you are using *.dev  domains to access your development machine, this behaviour is probably not what you want for all your local urls. Configuring dnsmasq At netz98 we are using dnsmasq to redirect all *.dev  calls to our localhost. dnsmasq has a setting where you can easily change this to another domain like *.localhost . First of locate...<p class="read-more"><a class="btn btn-default" href="https://dev98.de/2017/12/08/chrome-63-vs-dev-domains/"> Read More<span class="screen-reader-text">  Read More</span></a></p>]]></description>
+										<content:encoded><![CDATA[<p>With the recent update to version 63 for Chrome they introduced a feature, that redirects all <span class="lang:php decode:true crayon-inline ">*.dev</span>  calls from HTTP to HTTPS.</p>
+<p>If you are using <span class="lang:php decode:true crayon-inline ">*.dev</span>  domains to access your development machine, this behaviour is probably not what you want for all your local urls.</p>
+<h2>Configuring dnsmasq</h2>
+<p>At netz98 we are using dnsmasq to redirect all <span class="lang:php decode:true crayon-inline ">*.dev</span>  calls to our localhost.</p>
+<p>dnsmasq has a setting where you can easily change this to another domain like <span class="lang:php decode:true crayon-inline ">*.localhost</span> .</p>
+<p>First of locate the config file for dnsmasq. If you have installed it using brew you will probably find it under <span class="lang:php decode:true crayon-inline ">/usr/local/etc/dnsmasq.conf</span> .</p>
+<p>Open the file in an editor of your choice and look for the following line:</p>
+<pre class="lang:sh decode:true ">address=/dev/127.0.0.1</pre>
+<p>And change it to:</p>
+<pre class="lang:sh decode:true ">address=/localhost/127.0.0.1</pre>
+<p>If you cannot find a line setting the address like shown above, just add a new line with the setting.</p>
+<p>To restart dnsmasq you can use</p>
+<pre class="lang:php decode:true ">brew services restart dnsmasq</pre>
+<h2>Configuring apache / nginx</h2>
+<p>Depending on your choice of setup you might be using an nginx or apache setup.</p>
+<p>You most likely have some virtual-hosts or server settings that might need to be adjusted to the new domain.</p>
+<p>This could look something like this for nginx.</p>
+<pre class="lang:apache decode:true">server {
+  listen 80;
+
+  server_name shop.dev;
+
+  // ....
+}</pre>
+<p>Locate the server_name setting and any other occurences of your <span class="lang:php decode:true crayon-inline ">*.dev</span>  domain and change it to <span class="lang:php decode:true crayon-inline">.localhost</span></p>
+<p>Do not forget to change your Magento1 or Magento2 Urls in the core_config_data table.</p>
+<h2><strong>MacOS Nameserver</strong></h2>
+<p>For Firefox and Safari and a working <span class="lang:php decode:true crayon-inline">ping foo.bar.localhost</span> , you also have to add a setting for that.</p>
+<p>Create the file <span class="lang:php decode:true crayon-inline ">/etc/resolver/localhost</span>  with the following content:</p>
+<pre class="lang:php decode:true ">nameserver 127.0.0.1</pre>
+<p>After doing so, you need to restart the DNS Resolver and flush caches.<br />
+I am on the latest MacOS 10.13 so I had to run the following command:</p>
+<pre class="lang:sh decode:true ">sudo killall -HUP mDNSResponder; sudo killall mDNSResponderHelper; sudo dscacheutil -flushcache</pre>
+<p>If you are running a different MacOS version, you can find a great blog post over at Dreamhost where they list the commands for each MacOS version: <a href="https://help.dreamhost.com/hc/en-us/articles/214981288-Flushing-your-DNS-cache-in-Mac-OS-X-and-Linux">https://help.dreamhost.com/hc/en-us/articles/214981288-Flushing-your-DNS-cache-in-Mac-OS-X-and-Linux</a></p>
+<p><strong>UPDATE:</strong><br />
+You might have to do a reboot of your machine so that the resolver works.</p>
+<p><strong>UPDATE 2:</strong><br />
+Firefox and Safari require the above mentioned resolver to work.</p>
+<p>If you got anything to add or there even is a better solution feel free to leave a comment below.</p>
+]]></content:encoded>
+					
+					<wfw:commentRss>https://dev98.de/2017/12/08/chrome-63-vs-dev-domains/feed/</wfw:commentRss>
+			<slash:comments>0</slash:comments>
+		
+		
+			</item>
+		<item>
+		<title>PSR-7 Standard  &#8211; Part 4 &#8211; File Uploads</title>
+		<link>https://dev98.de/2017/11/25/psr-7-standard-part-4-file-uploads/</link>
+					<comments>https://dev98.de/2017/11/25/psr-7-standard-part-4-file-uploads/#respond</comments>
+		
+		<dc:creator><![CDATA[Christian Münch]]></dc:creator>
+		<pubDate>Sat, 25 Nov 2017 13:22:17 +0000</pubDate>
+				<category><![CDATA[General]]></category>
+		<category><![CDATA[HTTP]]></category>
+		<category><![CDATA[PSR]]></category>
+		<category><![CDATA[upload]]></category>
+		<guid isPermaLink="false">https://dev98.de/?p=867</guid>
+
+					<description><![CDATA[This post is part of series: Part 1: Overview Part 2: Request and URI Part 3: Response Part 4: File Uploads Part 5: HTTP-Client Part 6: Server Request Part 7: Middleware Part 8: Usage in a Magento module After we learned what a Request and a Response are, let’s now look how we can send files to the server. Then have a look on how we can process them with Guzzle on the server side. Client Side Script As you can see in the...<p class="read-more"><a class="btn btn-default" href="https://dev98.de/2017/11/25/psr-7-standard-part-4-file-uploads/"> Read More<span class="screen-reader-text">  Read More</span></a></p>]]></description>
+										<content:encoded><![CDATA[<p>This post is part of series:</p>
+<ul>
+<li><a href="https://dev98.de/2017/01/17/psr-7-standard-part1-overview/">Part 1: Overview</a></li>
+<li><a href="https://dev98.de/2017/07/03/psr-7-standard-part-2-request-and-uri/">Part 2: Request and URI</a></li>
+<li><a href="/2017/10/19/psr-7-standard-part-3-response/">Part 3: Response</a></li>
+<li><strong>Part 4: File Uploads</strong></li>
+<li><a href="/2017/12/27/psr-7-standard-part-5-http-client/">Part 5: HTTP-Client</a></li>
+<li><a href="/2018/01/02/psr-7-standard-part-6-server-requests/">Part 6: Server Request</a></li>
+<li>Part 7: Middleware</li>
+<li>Part 8: Usage in a Magento module</li>
+</ul>
+<hr />
+<p>After we learned what a Request and a Response are, let’s now look how we can send files to the server. Then have a look on how we can process them with Guzzle on the server side.</p>
+<h2>Client Side Script</h2>
+<p>As you can see in the diagram, a file upload is also handled as stream.</p>
+<p><img decoding="async" loading="lazy" class="alignnone size-full wp-image-865" src="https://dev98.de/wp-content/uploads/2017/11/psr7_uploaded_file.png" width="3375" height="1784" srcset="https://dev98.de/wp-content/uploads/2017/11/psr7_uploaded_file.png 3375w, https://dev98.de/wp-content/uploads/2017/11/psr7_uploaded_file-300x159.png 300w, https://dev98.de/wp-content/uploads/2017/11/psr7_uploaded_file-1024x541.png 1024w, https://dev98.de/wp-content/uploads/2017/11/psr7_uploaded_file-768x406.png 768w, https://dev98.de/wp-content/uploads/2017/11/psr7_uploaded_file-1536x812.png 1536w, https://dev98.de/wp-content/uploads/2017/11/psr7_uploaded_file-2048x1083.png 2048w, https://dev98.de/wp-content/uploads/2017/11/psr7_uploaded_file-511x270.png 511w" sizes="(max-width: 3375px) 100vw, 3375px" /></p>
+<p>First we create script “file_upload.php” with this content which initializes the autoloader and creates a sample file for the upload test.</p>
+<pre class="lang:php decode:true">&lt;?php
+require_once 'vendor/autoload.php';
+  
+// create a test file
+file_put_contents('foo.txt', '"Foo" is the content of the file');
+</pre>
+<p>After we have a text file, we can create our stream with the Guzzle PSR-7 component. Please add the code to the existing file.</p>
+<pre class="lang:php decode:true"><code>// put test file into multipart stream
+$multipart = new \GuzzleHttp\Psr7\MultipartStream([
+    [
+        'name' =&gt; 'upload_file',
+        'contents' =&gt; fopen('foo.txt', 'r')
+    ],
+]);
+</code></pre>
+<p>The <code>MultipartStream</code> gives us the ability to send more than once file to the server. As last part of the script we need to create a Request to send the <code>MultipartStream</code> to the server.</p>
+<pre class="lang:php decode:true"><code>$request = new \GuzzleHttp\Psr7\Request('POST', 'http://127.0.0.1:8080');
+$request = $request-&gt;withBody($multipart);
+
+$client = new \GuzzleHttp\Client();
+$response = $client-&gt;send($request);
+echo $response-&gt;getBody();</code></pre>
+<h2>Server Side Script</h2>
+<p>Please create the script “server_file.php” to receive the files.</p>
+<pre class="lang:php decode:true"><code>&lt;?php
+
+require_once __DIR__ . '/vendor/autoload.php';
+
+$request = \GuzzleHttp\Psr7\ServerRequest::fromGlobals();
+$files = $request-&gt;getUploadedFiles();
+
+$response = new \GuzzleHttp\Psr7\Response();
+$response = $response-&gt;withStatus(200, 'OK');
+
+$uploadedFiles = $request-&gt;getUploadedFiles();
+
+$uploadedFileInfos = [];
+foreach ($uploadedFiles as $uploadedFile) {
+    /** @var $uploadedFile \GuzzleHttp\Psr7\UploadedFile */
+    $uploadedFileInfos[] = [
+        'file_name' =&gt; $uploadedFile-&gt;getClientFilename(),
+        'mime_type' =&gt; $uploadedFile-&gt;getClientMediaType(),
+        'size'      =&gt; $uploadedFile-&gt;getSize(),
+        'content'   =&gt; (string) $uploadedFile-&gt;getStream()
+    ];
+}
+
+$response = $response-&gt;withBody(
+    \GuzzleHttp\Psr7\stream_for(print_r($uploadedFileInfos))
+);
+
+echo \GuzzleHttp\Psr7\str($response);
+</code></pre>
+<p>The script is very simple. It creates a <code>ServerRequest</code> (we talk about this in a future blog post). The <code>ServerRequest</code> can handle the <code>MultipartStream</code> and return the files with the handy method method <code>getUploadedFiles</code>. This methods is now a standard to get all data of the uploaded files. If you know how files are handled without PSR-7 you know that this is a really enhancement.</p>
+<p>For debugging we collect all data of the uploaded files and return them back as response to the client.</p>
+<h2>Test the Upload</h2>
+<p>Run the server in console:</p>
+<pre><code>php -S 127.0.0.1:8080 server_file.php</code></pre>
+<p>Run the client script in a second console:</p>
+<pre><code>php file_upload.php</code></pre>
+<p>If you did everything correct you should now see the result of the server script:</p>
+<pre class="lang:php highlight:0 decode:true ">HTTP/1.1 200 OK
+
+Array
+(
+    [0] =&gt; Array
+        (
+            [file_name] =&gt; foo.txt
+            [mime_type] =&gt; text/plain
+            [size] =&gt; 32
+            [content] =&gt; "Foo" is the content of the file
+        )
+
+)</pre>
+<p>&nbsp;</p>
+<p>That’s it. The next blog post will give you some inside into the HTTP Client.</p>
+]]></content:encoded>
+					
+					<wfw:commentRss>https://dev98.de/2017/11/25/psr-7-standard-part-4-file-uploads/feed/</wfw:commentRss>
+			<slash:comments>0</slash:comments>
+		
+		
+			</item>
+		<item>
+		<title>Run Mailhog in Docker and use it in PHP</title>
+		<link>https://dev98.de/2017/11/20/run-mailhog-in-docker-and-use-it-in-php/</link>
+					<comments>https://dev98.de/2017/11/20/run-mailhog-in-docker-and-use-it-in-php/#respond</comments>
+		
+		<dc:creator><![CDATA[Christian Münch]]></dc:creator>
+		<pubDate>Mon, 20 Nov 2017 10:45:31 +0000</pubDate>
+				<category><![CDATA[General]]></category>
+		<category><![CDATA[mailhog]]></category>
+		<category><![CDATA[PHP]]></category>
+		<category><![CDATA[smtp]]></category>
+		<guid isPermaLink="false">https://dev98.de/?p=849</guid>
+
+					<description><![CDATA[This post describes how you can install and configure Mailhog as SMTP Server for your local PHP development environment. This is useful to catch all outgoing emails. A running PHP and Docker environment is required to follow the instructions. Install Mailhog On my local machine, I have docker-compose.yml file which contains a lot of services (e.g MySQL, Elastic, Redis) which I use during the daily development. For our mailhog example we need only one service. Please create a docker-compose.yml with...<p class="read-more"><a class="btn btn-default" href="https://dev98.de/2017/11/20/run-mailhog-in-docker-and-use-it-in-php/"> Read More<span class="screen-reader-text">  Read More</span></a></p>]]></description>
+										<content:encoded><![CDATA[<p>This post describes how you can install and configure Mailhog as SMTP Server for your local PHP development environment. This is useful to catch all outgoing emails.</p>
+<p>A running PHP and Docker environment is required to follow the instructions.</p>
+<h2>Install Mailhog</h2>
+<p>On my local machine, I have <strong>docker-compose.yml</strong> file which contains a lot of services (e.g MySQL, Elastic, Redis) which I use during the daily development.</p>
+<p>For our mailhog example we need only one service. Please create a docker-compose.yml with this content:</p>
+<pre class="lang:yaml decode:true">version: '2'
+services:
+    mailhog:
+        container_name: mailhog
+        image: mailhog/mailhog
+        restart: always
+        ports:
+            - 1025:1025
+            - 8025:8025</pre>
+<p>Run <code>docker-compose up -d mailhog</code> to create and start the container. If the mailhog image does not exist, Docker will start to download the image from official <a title="Official Mailhog Docker Image" href="https://hub.docker.com/r/mailhog/mailhog/">Docker-Hub</a>.</p>
+<p>Verify if everything is up and running.</p>
+<pre class="lang:sh decode:true">docker-compose ps
+Name      Command             State    Ports
+-------------------------------------------------------------------------------------
+mailhog   MailHog             Up       0.0.0.0:1025-&gt;1025/tcp, 0.0.0.0:8025-&gt;8025/tcp
+</pre>
+<p>No you can use the TCP Port 1025 for sending email over SMTP protocol. The Port 8025 contains the Web-UI.</p>
+<h2>Configure PHP</h2>
+<p>Out goal is that PHP’s intern command “mail” uses our freshly installed Mailhog server. To effect this, we need to set the “sendmail_path” setting.</p>
+<p>Please modify your php.ini file and set the following directive:</p>
+<pre><code>sendmail_path = docker exec -i mailhog sendmail -S localhost:1025</code></pre>
+<p>From now, every “mail” command call uses the docker container with the name “mailhog” to send any email.</p>
+<p>We can test this with a simple PHP CLI call:</p>
+<pre class="lang:php decode:true">php -r 'mail("foo@example.com", "test", time(), "From: Mailhog &lt;mailhog@example.com&gt;");'</pre>
+<p>We should now be able to see the arrived message in the Web-UI. Open your browser with the address “http://localhost:8025”.</p>
+<p><img decoding="async" loading="lazy" class="alignnone size-full wp-image-848" src="https://dev98.de/wp-content/uploads/2017/11/DraggedImage.png" width="881" height="452" srcset="https://dev98.de/wp-content/uploads/2017/11/DraggedImage.png 881w, https://dev98.de/wp-content/uploads/2017/11/DraggedImage-300x154.png 300w, https://dev98.de/wp-content/uploads/2017/11/DraggedImage-768x394.png 768w, https://dev98.de/wp-content/uploads/2017/11/DraggedImage-526x270.png 526w" sizes="(max-width: 881px) 100vw, 881px" /></p>
+]]></content:encoded>
+					
+					<wfw:commentRss>https://dev98.de/2017/11/20/run-mailhog-in-docker-and-use-it-in-php/feed/</wfw:commentRss>
+			<slash:comments>0</slash:comments>
+		
+		
+			</item>
+	</channel>
+</rss>
+
+<!--
+Performance optimized by W3 Total Cache. Learn more: https://www.boldgrid.com/w3-total-cache/
+
+
+Served from: dev98.de @ 2022-12-08 22:21:27 by W3 Total Cache
+-->
